@@ -1,0 +1,2 @@
+Comprobación HTTP real con Waitress: acceso a login, sesión, página principal, alta de regla, evaluación en Python, logout y acceso posterior denegado: OK.
+No se ejecutaron consultas DNS. No incluye prueba visual de navegador ni despliegue TLS.

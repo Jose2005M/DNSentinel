@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest==9.2.0
+bandit==1.9.4
+detect-secrets==1.5.0
