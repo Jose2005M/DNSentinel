@@ -2,6 +2,7 @@
 import sqlite3
 import time
 from flask import current_app, g
+from .crypto_store import seal
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS users (
@@ -33,6 +34,7 @@ def get_db():
         connection = sqlite3.connect(current_app.config['DATABASE'], timeout=5)
         connection.row_factory = sqlite3.Row
         connection.execute('PRAGMA foreign_keys = ON')
+        connection.execute('PRAGMA secure_delete = ON')
         g.db = connection
     return g.db
 
@@ -47,6 +49,11 @@ def init_db():
     db = get_db()
     db.executescript(SCHEMA)
     db.execute('PRAGMA journal_mode = WAL')
+    columns = {r[1] for r in db.execute('PRAGMA table_info(events)')}
+    if 'client' not in columns:
+        db.execute("ALTER TABLE events ADD COLUMN client TEXT NOT NULL DEFAULT 'local'")
+    if 'mode' not in columns:
+        db.execute("ALTER TABLE events ADD COLUMN mode TEXT NOT NULL DEFAULT 'simulated'")
     db.commit()
 
 
@@ -66,12 +73,17 @@ def serialize_rule(row):
 
 
 def evaluate(domain):
-    """Solo evalúa la política. Todavía no realiza consultas DNS."""
-    rows = get_db().execute('SELECT * FROM rules WHERE active = 1 ORDER BY id').fetchall()
-    matches = [r for r in rows if domain == r['domain'] or
-               (r['subdomains'] and domain.endswith('.' + r['domain']))]
-    for kind, decision, prefix in [('allow', 'allowed', 'Excepción: '), ('block', 'blocked', 'Bloqueo: ')]:
-        rule = next((r for r in matches if r['kind'] == kind), None)
-        if rule is not None:
-            return {'decision': decision, 'reason': prefix + rule['domain']}
-    return {'decision': 'allowed', 'reason': 'Sin coincidencia en las reglas activas'}
+    return current_app.extensions['policy'].evaluate(domain)
+
+
+def record_event(domain, kind, transport, decision, reason, client='local', mode='real'):
+    from .security import utc_now
+    event = dict(time=utc_now(), domain=domain, type=kind, transport=transport,
+                 decision=decision, reason=reason, client=client, mode=mode)
+    values = [seal(event[field], 'events.' + field) for field in event]
+    db = get_db()
+    db.execute('INSERT INTO events(time,domain,type,transport,decision,reason,client,mode,created) VALUES (?,?,?,?,?,?,?,?,?)',
+               (*values, time.time()))
+    db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 2000)')
+    db.commit()
+    return event

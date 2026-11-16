@@ -13,7 +13,7 @@ from dnsentinel.security import COOKIE, digest
 @pytest.fixture
 def app(tmp_path):
     application = create_app({'TESTING': True, 'DATABASE': str(tmp_path / 'test.sqlite3'),
-                              'RATE_KEY': secrets.token_bytes(32)})
+                              'RATE_KEY': secrets.token_bytes(32), 'DATA_KEY': secrets.token_bytes(32)})
     application.credentials = {}
     with application.app_context():
         db = get_db()
@@ -137,7 +137,8 @@ def test_password_hash_and_failure_audit_exclude_credentials(app):
         stored = db.execute('SELECT password_hash FROM users WHERE username=?', ('admin',)).fetchone()[0]
         assert stored.startswith('$argon2id$')
         assert app.credentials['admin'] not in stored
-        events = str([dict(r) for r in db.execute('SELECT * FROM audit')])
+        from dnsentinel.crypto_store import decrypt_row
+        events = str([decrypt_row(r, 'audit') for r in db.execute('SELECT * FROM audit')])
         assert attempted not in events and csrf not in events
         assert 'failed' in events
 
@@ -233,6 +234,30 @@ def test_fresh_instance_reads_same_database(app):
     client = app.test_client()
     headers = sign_in(client, app)
     client.post('/api/rules', json=rule(), headers=headers)
-    other = create_app({'TESTING': True, 'DATABASE': app.config['DATABASE'], 'RATE_KEY': secrets.token_bytes(32)})
+    other = create_app({'TESTING': True, 'DATABASE': app.config['DATABASE'], 'RATE_KEY': secrets.token_bytes(32), 'DATA_KEY': app.config['DATA_KEY']})
     with other.app_context():
         assert get_db().execute('SELECT domain FROM rules').fetchone()[0] == 'malware.test'
+
+
+def test_import_authorization_and_validation(app):
+    import io
+    client = app.test_client()
+    headers = sign_in(client, app, 'lector')
+    assert client.post('/api/rules/import', data={'file':(io.BytesIO(b'a.test'),'list.txt')}, headers=headers).status_code == 403
+    admin = app.test_client()
+    headers = sign_in(admin, app)
+    assert admin.post('/api/rules/import', data={'file':(io.BytesIO(b'\xff'),'list.txt')}, headers=headers).status_code == 400
+    assert admin.post('/api/rules/import', data={'file':(io.BytesIO(b'a.test'),'list.txt'),'subdomains':'invalid'}, headers=headers).status_code == 400
+    assert admin.post('/api/rules/import', data={'file':(io.BytesIO(b'a.test'),'list.txt'),'kind':'invalid'}, headers=headers).status_code == 400
+    assert admin.post('/api/rules/import', data={'file':(io.BytesIO(b'a.test\nb.test'),'list.txt')}, headers=headers).json['added'] == 2
+
+
+def test_reset_password_revokes_existing_session(app):
+    client = app.test_client()
+    sign_in(client, app)
+    password = secrets.token_urlsafe(24)
+    result = app.test_cli_runner().invoke(args=['reset-password','admin'], input=password+'\n'+password+'\n')
+    assert result.exit_code == 0 and password not in result.output
+    assert client.get('/api/rules').status_code == 401
+    app.credentials['admin'] = password
+    sign_in(app.test_client(), app)

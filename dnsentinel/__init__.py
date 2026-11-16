@@ -1,4 +1,4 @@
-"""Backend administrativo de DNSentinel. Etapa 1; el servicio DNS está pendiente."""
+"""Aplicación administrativa de DNSentinel y comandos de mantenimiento."""
 import logging
 import os
 from pathlib import Path
@@ -14,8 +14,11 @@ from argon2.exceptions import InvalidHashError, VerificationError
 from flask import Flask, abort, g, jsonify, redirect, request
 from werkzeug.exceptions import HTTPException
 
-from .db import close_db, evaluate, get_db, init_db, purge_expired, serialize_rule
-from .security import (COOKIE, audit, check_csrf, issue_session, load_session,
+from .db import close_db, evaluate, get_db, init_db, purge_expired, serialize_rule, record_event
+from .crypto_store import configure_crypto, migrate_logs, decrypt_row
+from .policy import Policy
+from .lists import import_list, MAX_RULES
+from .security import (COOKIE, cookie_name, audit, check_csrf, issue_session, load_session,
                        rate_limit, require_admin, revoke_session, utc_now)
 from .validation import InvalidInput, domain_name, object_fields, password_policy, rule_input, username
 
@@ -24,10 +27,11 @@ def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True, static_url_path='/static')
     app.config.from_mapping(
         DATABASE=str(Path(app.instance_path) / 'dnsentinel.sqlite3'),
-        MAX_CONTENT_LENGTH=8192,
+        MAX_CONTENT_LENGTH=1064960,
         TRUSTED_HOSTS=['localhost', '127.0.0.1'],
-        SESSION_COOKIE_SECURE=os.getenv('DNSENTINEL_COOKIE_SECURE') == '1',
+        SESSION_COOKIE_SECURE=os.getenv('DNSENTINEL_COOKIE_SECURE', '1') == '1',
         TESTING=False,
+        DNS_STATUS={'running': False},
     )
     if test_config:
         app.config.update(test_config)
@@ -43,13 +47,17 @@ def create_app(test_config=None):
         except FileExistsError:
             pass
         app.config['RATE_KEY'] = key_path.read_bytes()
+    configure_crypto(app)
+    app.extensions['policy'] = Policy()
     app.teardown_appcontext(close_db)
     app.extensions['password_hasher'] = PasswordHasher()
     # Hash ficticio de coste equivalente para usuarios inexistentes.
     dummy = app.extensions['password_hasher'].hash(secrets.token_urlsafe(32))
     with app.app_context():
         init_db()
+        migrate_logs(get_db())
         purge_expired()
+        app.extensions['policy'].refresh()
 
     maintenance = {'last': 0.0}
     maintenance_lock = threading.Lock()
@@ -64,6 +72,8 @@ def create_app(test_config=None):
                 purge_expired()
                 maintenance['last'] = time.monotonic()
         load_session()
+        if request.path != '/api/rules/import' and request.content_length and request.content_length > 8192:
+            abort(413)
         if not request.path.startswith('/api/'):
             return None
         if request.path not in ('/api/session', '/api/login') and g.user is None:
@@ -85,10 +95,10 @@ def create_app(test_config=None):
         if app.config['SESSION_COOKIE_SECURE']:
             response.headers['Strict-Transport-Security'] = 'max-age=31536000'
         if getattr(g, 'clear_cookie', False):
-            response.delete_cookie(COOKIE, path='/', httponly=True, samesite='Strict',
+            response.delete_cookie(cookie_name(), path='/', httponly=True, samesite='Strict',
                                    secure=app.config['SESSION_COOKIE_SECURE'])
         if getattr(g, 'new_cookie', None):
-            response.set_cookie(COOKIE, g.new_cookie, httponly=True, samesite='Strict',
+            response.set_cookie(cookie_name(), g.new_cookie, httponly=True, samesite='Strict',
                                 secure=app.config['SESSION_COOKIE_SECURE'], path='/')
         return response
 
@@ -183,8 +193,10 @@ def create_app(test_config=None):
         require_admin()
         data = rule_input(json_body())
         db = get_db()
-        if db.execute('SELECT count(*) FROM rules').fetchone()[0] >= 5000:
-            abort(409, description='Se alcanzó el límite de 5000 reglas del laboratorio.')
+        db.execute('BEGIN IMMEDIATE')
+        if db.execute('SELECT count(*) FROM rules').fetchone()[0] >= MAX_RULES:
+            db.rollback()
+            abort(409, description='Se alcanzó el límite de reglas del laboratorio.')
         try:
             cur = db.execute('INSERT INTO rules(domain,kind,note,subdomains,active) VALUES (?,?,?,?,?)',
                              tuple(data[k] for k in ('domain', 'kind', 'note', 'subdomains', 'active')))
@@ -192,6 +204,7 @@ def create_app(test_config=None):
             db.rollback()
             abort(409, description='Ya existe una regla de este tipo para el dominio.')
         audit('rule_create', 'success', f'id={cur.lastrowid};domain={data["domain"]};kind={data["kind"]}')
+        app.extensions['policy'].refresh()
         return jsonify(ok=True, id=cur.lastrowid), 201
 
     @app.put('/api/rules/<int:rule_id>')
@@ -211,6 +224,7 @@ def create_app(test_config=None):
         detail = (f'id={rule_id};before={old["domain"]},{old["kind"]},{old["active"]},{old["subdomains"]};'
                   f'after={data["domain"]},{data["kind"]},{int(data["active"])},{int(data["subdomains"])}')
         audit('rule_update', 'success', detail)
+        app.extensions['policy'].refresh()
         return jsonify(ok=True)
 
     @app.delete('/api/rules/<int:rule_id>')
@@ -222,6 +236,7 @@ def create_app(test_config=None):
             abort(404)
         db.execute('DELETE FROM rules WHERE id = ?', (rule_id,))
         audit('rule_delete', 'success', f'id={rule_id};domain={old["domain"]};kind={old["kind"]}')
+        app.extensions['policy'].refresh()
         return jsonify(ok=True)
 
     @app.post('/api/simulate')
@@ -232,23 +247,18 @@ def create_app(test_config=None):
         if data['type'] not in ('A', 'AAAA', 'MX', 'TXT') or data['transport'] not in ('UDP', 'TCP'):
             raise InvalidInput('Tipo de registro o transporte no admitido.')
         result = evaluate(domain)
-        event = {'time': utc_now(), 'domain': domain, 'type': data['type'], 'transport': data['transport'], **result}
-        db = get_db()
-        db.execute('INSERT INTO events(time,domain,type,transport,decision,reason,created) VALUES (?,?,?,?,?,?,?)',
-                    (*event.values(), time.time()))
-        db.execute('DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 200)')
-        db.commit()
+        event = record_event(domain, data['type'], data['transport'], result['decision'], result['reason'], mode='simulated')
         return jsonify(event=event, simulated=True)
 
     @app.get('/api/events')
     def events():
-        return jsonify(logs=[dict(r) for r in get_db().execute(
-            'SELECT id,time,domain,type,transport,decision,reason FROM events ORDER BY id DESC LIMIT 200')])
+        return jsonify(logs=[decrypt_row(r, 'events') for r in get_db().execute(
+            'SELECT id,time,domain,type,transport,decision,reason,client,mode FROM events ORDER BY id DESC LIMIT 2000')])
 
     @app.get('/api/audit')
     def audit_list():
         require_admin()
-        return jsonify(audit=[dict(r) for r in get_db().execute(
+        return jsonify(audit=[decrypt_row(r, 'audit') for r in get_db().execute(
             'SELECT id,time,actor,action,result,detail FROM audit ORDER BY id DESC LIMIT 200')])
 
     @app.cli.command('create-user')
@@ -264,8 +274,10 @@ def create_app(test_config=None):
             db.execute('INSERT INTO users(username,password_hash,role) VALUES (?,?,?)',
                         (name, app.extensions['password_hasher'].hash(password), role))
             db.commit()
-        except (InvalidInput, sqlite3.IntegrityError) as error:
-            raise click.ClickException('Usuario existente o datos no válidos. Usa una frase de 15 a 128 caracteres.') from error
+        except InvalidInput as error:
+            raise click.ClickException(str(error)) from error
+        except sqlite3.IntegrityError as error:
+            raise click.ClickException('Ese nombre de usuario ya existe. Elige otro o usa reset-password.') from error
         click.echo(f'Usuario {name} creado con rol {role}.')
 
     @app.cli.command('seed-demo')
@@ -279,6 +291,7 @@ def create_app(test_config=None):
             db.execute('INSERT OR IGNORE INTO rules(domain,kind,note,subdomains,active) VALUES (?,?,?,?,1)',
                         (domain, kind, note, subdomains))
         db.commit()
+        app.extensions['policy'].refresh()
         click.echo('Reglas de prueba agregadas. No se modificaron reglas existentes.')
 
     @app.cli.command('purge-expired')
@@ -286,5 +299,47 @@ def create_app(test_config=None):
         """Elimina eventos vencidos. Programar diariamente si el servicio permanece inactivo."""
         purge_expired()
         click.echo('Mantenimiento completado: retención de 7 días.')
+
+    @app.get('/api/status')
+    def service_status():
+        return jsonify(dns=app.config['DNS_STATUS'], encrypted_logs=True, https=request.is_secure,
+                       rule_limit=MAX_RULES)
+
+    @app.post('/api/rules/import')
+    def import_rules():
+        require_admin()
+        rate_limit('import', str(g.user['id']), 5, 60)
+        file = request.files.get('file')
+        if file is None:
+            raise InvalidInput('Selecciona un archivo .txt de dominios o formato hosts.')
+        try:
+            text = file.read(1024 * 1024 + 1).decode('utf-8-sig')
+        except UnicodeDecodeError:
+            raise InvalidInput('El archivo debe estar codificado en UTF-8.') from None
+        scope = request.form.get('subdomains', 'true')
+        if scope not in ('true', 'false'):
+            raise InvalidInput('El alcance de subdominios debe ser true o false.')
+        result = import_list(text, request.form.get('kind', 'block'), scope == 'true')
+        audit('rules_import', 'success', f'added={result["added"]};existing={result["existing"]};ignored={result["ignored"]}')
+        return jsonify(**result)
+
+    @app.cli.command('reset-password')
+    @click.argument('name')
+    @click.password_option(confirmation_prompt=True)
+    def reset_password(name, password):
+        """Recuperación local por el propietario del servidor; revoca todas las sesiones del usuario."""
+        try:
+            name = username(name)
+            password_policy(password)
+        except InvalidInput as error:
+            raise click.ClickException(str(error)) from error
+        db = get_db()
+        user = db.execute('SELECT id FROM users WHERE username=?', (name,)).fetchone()
+        if user is None:
+            raise click.ClickException('El usuario no existe.')
+        db.execute('UPDATE users SET password_hash=? WHERE id=?', (app.extensions['password_hasher'].hash(password), user['id']))
+        db.execute('DELETE FROM sessions WHERE user_id=?', (user['id'],))
+        audit('password_reset_local', 'success', 'user_id=' + str(user['id']))
+        click.echo('Contraseña actualizada y sesiones revocadas.')
 
     return app

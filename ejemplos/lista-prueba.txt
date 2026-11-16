@@ -1,0 +1,4 @@
+# Dominios reservados de prueba; no son amenazas reales.
+malware.test
+phishing.test
+0.0.0.0 descargas.test

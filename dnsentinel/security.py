@@ -6,8 +6,13 @@ import time
 from datetime import datetime, timezone
 from flask import abort, current_app, g, request
 from .db import get_db
+from .crypto_store import seal
 
-COOKIE = 'dnsentinel_session'
+COOKIE = '__Host-dnsentinel_session'
+
+
+def cookie_name():
+    return COOKIE if current_app.config['SESSION_COOKIE_SECURE'] else 'dnsentinel_dev_session'
 
 
 def utc_now():
@@ -24,7 +29,7 @@ def audit(action, result, detail=''):
     actor = user['username'] if user is not None else 'anonymous'
     db = get_db()
     db.execute('INSERT INTO audit(time,actor,action,result,detail,created) VALUES (?,?,?,?,?,?)',
-               (utc_now(), actor, action, result, detail, time.time()))
+               (*[seal(value, 'audit.' + field) for field, value in zip(('time','actor','action','result','detail'), (utc_now(), actor, action, result, detail))], time.time()))
     # Los detalles son definidos por la aplicación, nunca contienen el cuerpo de la petición.
     db.execute('DELETE FROM audit WHERE id NOT IN (SELECT id FROM audit ORDER BY id DESC LIMIT 10000)')
     db.commit()
@@ -43,7 +48,7 @@ def issue_session(user_id=None):
 def load_session():
     g.user = None
     g.server_session = None
-    token = request.cookies.get(COOKIE, '')
+    token = request.cookies.get(cookie_name(), '')
     if not token or len(token) > 128:
         return
     db = get_db()

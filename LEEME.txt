@@ -1,0 +1,16 @@
+DNSentinel 1.2 - Proteccion DNS y Chrome
+
+Instalacion inicial: INICIO_AUTOMATICO.md
+Extension de Chrome (una sola vez): CHROME.md
+
+1. Prepara Python, dependencias, usuario y HTTPS segun INICIO_AUTOMATICO.md.
+2. Ejecuta Instalar integracion Chrome.cmd.
+3. Abre chrome://extensions, activa Modo de desarrollador y carga la
+   carpeta chrome_extension con Cargar descomprimida.
+4. Abre Chrome y ejecuta Iniciar DNSentinel.cmd.
+5. Usa Iniciar proteccion y Detener proteccion. Las reglas y pestanas se
+   sincronizan en cada ciclo sin reiniciar Chrome.
+
+El lanzador exige la confirmacion de la extension antes de cambiar el DNS.
+Restaurar DNS.cmd recupera el respaldo de red si hay una restauracion pendiente.
+La interfaz de frontend/ es una demostracion antigua; no activa el filtro real.

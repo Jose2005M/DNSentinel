@@ -10,3 +10,22 @@ instance/
 *.key
 *.pem
 *.log
+
+# Entorno y archivos temporales
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Configuración local, certificados y datos privados
+instance/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.db
+*.sqlite
+*.sqlite3

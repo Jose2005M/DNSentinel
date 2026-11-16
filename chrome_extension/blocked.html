@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Página bloqueada · DNSentinel</title>
+  <link rel="stylesheet" href="page.css">
+</head>
+<body>
+  <main>
+    <h1>Página bloqueada</h1>
+    <p id="domain" class="domain"></p>
+    <p>Una regla activa de DNSentinel impide abrir este dominio.</p>
+    <p>Para permitirlo, pulsa <strong>Detener protección</strong> en el lanzador o modifica la regla en el panel. Esta pestaña volverá a cargar cuando el dominio esté permitido.</p>
+    <button id="retry" type="button">Volver a intentar</button>
+    <p id="feedback" role="status"></p>
+    <footer>DNSentinel · Protección local de Chrome</footer>
+  </main>
+  <script src="blocked.js" type="module"></script>
+</body>
+</html>

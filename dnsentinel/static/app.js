@@ -4,7 +4,7 @@ const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,3500);}
 function stat(label,value,note,symbol,color=''){return `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-note">${note}</div><span class="stat-icon ${color}">${symbol}</span></div>`;}
 function badge(active){return `<span class="pill ${active?'active':'inactive'}"><i></i>${active?'Activo':'Inactivo'}</span>`;}
-function decisionBadge(value){return `<span class="pill ${value==='blocked'?'blocked':'active'}"><i></i>${value==='blocked'?'Bloqueada':'Permitida'}</span>`;}
+function decisionBadge(value){return `<span class="pill ${value==='blocked'?'blocked':value==='failed'?'inactive':'active'}"><i></i>${value==='blocked'?'Bloqueada':value==='failed'?'Fallida':'Permitida'}</span>`;}
 function renderRules(){const blocked=state.rules.filter(r=>r.kind==='block'),allowed=state.rules.filter(r=>r.kind==='allow');$('#nav-count').textContent=state.rules.length;$('#block-count').textContent=blocked.length;$('#allow-count').textContent=allowed.length;$('#rule-stats').innerHTML=stat('Dominios en bloqueo',blocked.length,`${blocked.filter(r=>r.active).length} reglas activas`,'⊘','red')+stat('Excepciones permitidas',allowed.length,'Tienen prioridad sobre el bloqueo','✓','green')+stat('Reglas activas',state.rules.filter(r=>r.active).length,`${state.rules.filter(r=>!r.active).length} reglas inactivas`,'≡');
 const q=$('#rule-search').value.toLowerCase(),filter=$('#status-filter').value;
 const list=state.rules.filter(r=>r.kind===kind&&(!q||(r.domain+' '+r.note).toLowerCase().includes(q))&&(filter==='all'||r.active===(filter==='active')));
@@ -13,8 +13,8 @@ $('#results-count').textContent=`${list.length} ${list.length===1?'dominio':'dom
 document.querySelectorAll('[data-kind]').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.kind===kind)));
 }
 function formatTime(t){return new Date(t).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});}
-function renderLogs(){const q=$('#log-search').value.toLowerCase(),filter=$('#log-filter').value;const list=state.logs.filter(l=>l.domain.includes(q)&&(filter==='all'||filter===l.decision));$('#logs-body').innerHTML=list.length?list.map(l=>`<tr><td>${esc(formatTime(l.time))}</td><td><span class="domain-name">${esc(l.domain)}</span><small class="muted" style="margin:4px 0 0;font-size:10px">${esc(l.type)} · ${esc(l.transport)} simulado</small></td><td>${decisionBadge(l.decision)}</td><td class="match">${esc(l.reason)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No hay consultas en esta vista. <a href="#simulador">Prueba un dominio en el simulador.</a></td></tr>';$('#log-count').textContent=`${list.length} consultas`;$('#export-logs').disabled=state.logs.length===0;}
-function renderOverview(){const n=state.logs.length,b=state.logs.filter(l=>l.decision==='blocked').length,a=n-b;$('#overview-stats').innerHTML=stat('Consultas simuladas',n,'Guardadas en SQLite (últimas 200)','⌁')+stat('Consultas bloqueadas',b,'Coincidencia con una regla activa','⊘','red')+stat('Consultas permitidas',a,'Excepción o sin regla de bloqueo','✓','green');$('#distribution').innerHTML=`<div class="dist-number">${n?Math.round(b/n*100):0}<span style="font-size:22px;color:#82958f">%</span></div><div class="dist-label">${n?'de las consultas simuladas fueron bloqueadas':'Ejecuta una consulta para ver resultados'}</div><div class="dist-bar"><span style="width:${n?a/n*100:0}%"></span><span style="width:${n?b/n*100:0}%"></span></div><div class="dist-legend"><span>Permitidas · ${a}</span><span>Bloqueadas · ${b}</span></div>`;$('#recent-activity').innerHTML=state.logs.length?state.logs.slice(0,4).map(l=>`<div class="activity-row"><span class="domain-name">${esc(l.domain)}</span>${decisionBadge(l.decision)}<time>${esc(formatTime(l.time))}</time></div>`).join(''):'<div class="empty">Tu actividad aparecerá aquí. <a href="#simulador">Simular primera consulta →</a></div>';}
+function renderLogs(){const q=$('#log-search').value.toLowerCase(),filter=$('#log-filter').value;const list=state.logs.filter(l=>l.domain.includes(q)&&(filter==='all'||filter===l.decision));$('#logs-body').innerHTML=list.length?list.map(l=>`<tr><td>${esc(formatTime(l.time))}</td><td><span class="domain-name">${esc(l.domain)}</span><small class="muted" style="margin:4px 0 0;font-size:10px">${esc(l.type)} · ${esc(l.transport)} · ${l.mode==='real'?'DNS real':'Simulación'}</small></td><td>${decisionBadge(l.decision)}</td><td class="match">${esc(l.reason)}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No hay consultas en esta vista. <a href="#simulador">Prueba un dominio en el simulador.</a></td></tr>';$('#log-count').textContent=`${list.length} consultas`;$('#export-logs').disabled=state.logs.length===0;}
+function renderOverview(){const n=state.logs.length,b=state.logs.filter(l=>l.decision==='blocked').length,a=state.logs.filter(l=>l.decision==='allowed').length;$('#overview-stats').innerHTML=stat('Consultas registradas',n,'Últimas 2.000 · reales y simuladas','⌁')+stat('Consultas bloqueadas',b,'Coincidencia con una regla activa','⊘','red')+stat('Consultas permitidas',a,'Excepción o sin regla de bloqueo','✓','green');$('#distribution').innerHTML=`<div class="dist-number">${n?Math.round(b/n*100):0}<span style="font-size:22px;color:#82958f">%</span></div><div class="dist-label">${n?'de las consultas registradas fueron bloqueadas':'Ejecuta una consulta para ver resultados'}</div><div class="dist-bar"><span style="width:${n?a/n*100:0}%"></span><span style="width:${n?b/n*100:0}%"></span></div><div class="dist-legend"><span>Permitidas · ${a}</span><span>Bloqueadas · ${b}</span></div>`;$('#recent-activity').innerHTML=state.logs.length?state.logs.slice(0,4).map(l=>`<div class="activity-row"><span class="domain-name">${esc(l.domain)}</span>${decisionBadge(l.decision)}<time>${esc(formatTime(l.time))}</time></div>`).join(''):'<div class="empty">Tu actividad aparecerá aquí. <a href="#simulador">Simular primera consulta →</a></div>';}
 function render(){renderRules();renderLogs();renderOverview();}
 function route(){let page=location.hash.slice(1)||'reglas';if(!['reglas','resumen','actividad','simulador','auditoria'].includes(page))page='reglas';document.querySelectorAll('.page').forEach(s=>s.hidden=s.id!=='page-'+page);document.querySelectorAll('[data-page]').forEach(a=>{a.classList.toggle('active',a.dataset.page===page);if(a.dataset.page===page)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});$('#breadcrumb').textContent={reglas:'Control de dominios',resumen:'Resumen',actividad:'Registro de consultas',simulador:'Probar una consulta',auditoria:'Auditoría de seguridad'}[page];render();}
 function openRule(id){editing=id||null;const r=state.rules.find(r=>r.id===id);$('#rule-form').reset();$('#rule-error').textContent='';$('#dialog-title').textContent=r?'Editar dominio':'Agregar dominio';$('#domain-input').value=r?.domain||'';$('#kind-input').value=r?.kind||kind;$('#note-input').value=r?.note||'';$('#subdomain-input').checked=r?.subdomains||false;$('#active-input').checked=r?.active??true;$('#rule-dialog').showModal();$('#domain-input').focus();}
@@ -28,7 +28,8 @@ function showConnectionError(error) {
   box.textContent = error.message + ' Recarga la página para reintentar.';
 }
 async function refresh() {
-  const [rules,events] = await Promise.all([api('/rules'),api('/events')]);
+  const [rules,events,status] = await Promise.all([api('/rules'),api('/events'),api('/status')]);
+  const dns=status.dns; $('#dns-status').textContent=dns.running ? `DNS ${dns.host}:${dns.port} · descartes de log: ${dns.log_dropped||0} · errores: ${dns.log_errors||0}` : 'DNS detenido';
   state={rules:rules.rules,logs:events.logs};
   render();
   if(currentUser?.role==='admin')await refreshAudit();
@@ -75,10 +76,10 @@ $('#sim-form').addEventListener('submit',async e=>{
 });
 document.querySelectorAll('[data-example]').forEach(b=>b.addEventListener('click',()=>{$('#sim-domain').value=b.dataset.example;$('#sim-domain').focus();}));
 $('#export-logs').addEventListener('click',()=>{
-  const cell=value=>'"'+String(value).replace(/"/g,'""')+'"';
-  const rows=[['fecha','dominio','tipo','transporte_simulado','decision','motivo'],...state.logs.map(l=>[l.time,l.domain,l.type,l.transport,l.decision,l.reason])];
+  const cell=value=>{let text=String(value??'');if(/^[=+\-@\t\r]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
+  const rows=[['fecha','dominio','tipo','transporte','decision','motivo','origen','cliente_seudonimo'],...state.logs.map(l=>[l.time,l.domain,l.type,l.transport,l.decision,l.reason,l.mode,l.client])];
   const url=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
-  const link=document.createElement('a');link.href=url;link.download='dnsentinel-consultas-simuladas.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const link=document.createElement('a');link.href=url;link.download='dnsentinel-consultas.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 $('#logout').addEventListener('click',async()=>{try{await api('/logout',{method:'POST'});location.replace('/login');}catch(error){toast(error.message);}});
 $('#refresh-audit').addEventListener('click',()=>refreshAudit().catch(error=>toast(error.message)));
@@ -88,8 +89,15 @@ async function start(){
     const session=await api('/session');if(!session.user){location.replace('/login');return;}
     currentUser=session.user;$('#account-name').textContent=currentUser.username;
     $('#account-role').textContent=currentUser.role==='admin'?'Administrador':'Solo lectura';
-    $('#add-rule').hidden=currentUser.role!=='admin';$('#audit-nav').hidden=currentUser.role!=='admin';
+    $('#add-rule').hidden=currentUser.role!=='admin';$('#import-rules').hidden=currentUser.role!=='admin';$('#audit-nav').hidden=currentUser.role!=='admin';
     await refresh();route();
   }catch(error){showConnectionError(error);}
 }
+$('#import-rules').addEventListener('click',()=>{$('#import-error').textContent='';$('#import-dialog').showModal();});
+$('#cancel-import').addEventListener('click',()=>$('#import-dialog').close());
+$('#import-form').addEventListener('submit',async e=>{
+  e.preventDefault();const button=e.submitter;button.disabled=true;
+  try{const body=new FormData();body.append('file',$('#import-file').files[0]);body.append('kind',$('#import-kind').value);body.append('subdomains',String($('#import-subs').checked));const result=await api('/rules/import',{method:'POST',body});$('#import-dialog').close();await refresh();toast(`Importadas: ${result.added}; existentes: ${result.existing}; líneas ignoradas: ${result.ignored}.`);}catch(error){$('#import-error').textContent=error.message;}finally{button.disabled=false;}
+});
+setInterval(()=>{if(currentUser&&!document.hidden)refresh().catch(showConnectionError);},10000);
 start();

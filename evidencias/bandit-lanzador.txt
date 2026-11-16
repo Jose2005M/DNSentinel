@@ -1,0 +1,105 @@
+Run started:2026-11-10 14:26:03.885560+00:00
+
+Test results:
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./control_windows.py:8:0
+7	import re
+8	import subprocess
+9	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./control_windows.py:79:20
+78	            prepared=True
+79	            watcher=subprocess.Popen([sys.executable,str(Path(__file__).resolve()),'--session',str(session),
+80	                                      '--watchdog','--helper-pid',str(os.getpid())],
+81	                                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),close_fds=True)
+82	            for _ in range(100):
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: ./launcher.py:10:0
+9	import ssl
+10	import subprocess
+11	import sys
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: ./launcher.py:133:28
+132	            with (session/'server.log').open('wb') as log:
+133	                self.server=subprocess.Popen(args,cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,
+134	                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+135	            request['server_pid']=self.server.pid;atomic_json(session/'request.json',request)
+
+--------------------------------------------------
+>> Issue: [B404:blacklist] Consider possible security implications associated with the subprocess module.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess
+   Location: desktop/windows.py:11:0
+10	import re
+11	import subprocess
+12	import uuid
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: desktop/windows.py:24:13
+23	def command(args, timeout=25):
+24	    result = subprocess.run(args, capture_output=True, timeout=timeout, creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0), check=False)
+25	    if result.returncode:
+
+--------------------------------------------------
+>> Issue: [B603:subprocess_without_shell_equals_true] subprocess call - check for execution of untrusted input.
+   Severity: Low   Confidence: High
+   CWE: CWE-78 (https://cwe.mitre.org/data/definitions/78.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html
+   Location: desktop/windows.py:91:12
+90	        try:
+91	            subprocess.run([system_exe('ipconfig.exe'),'/flushdns'], capture_output=True, timeout=15,
+92	                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0), check=False)
+93	        except (OSError, subprocess.TimeoutExpired):
+
+--------------------------------------------------
+>> Issue: [B104:hardcoded_bind_all_interfaces] Possible binding to all interfaces.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-605 (https://cwe.mitre.org/data/definitions/605.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html
+   Location: dnsentinel/lists.py:20:24
+19	        parts = entry.split()
+20	        if parts[0] in ('0.0.0.0', '127.0.0.1', '::', '::1'):
+21	            parts = parts[1:]
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 1773
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 7
+		Medium: 1
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 1
+		High: 7
+Files skipped (0):

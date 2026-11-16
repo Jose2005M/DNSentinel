@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "DNSentinel · Protección de Chrome",
+  "version": "1.2.0",
+  "minimum_chrome_version": "120",
+  "description": "Sincroniza el bloqueo de páginas con los botones del lanzador DNSentinel.",
+  "permissions": [
+    "nativeMessaging",
+    "declarativeNetRequest",
+    "tabs",
+    "webNavigation",
+    "storage",
+    "alarms"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "DNSentinel: comprobar conexión",
+    "default_popup": "status.html"
+  },
+  "incognito": "not_allowed",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqz+JvL8RLvdpjesk5d+4ip/751xnQVY/KyffZ0qgRuIAGlXcC5EXxJmBFA/7xA8OMtyETkvo2jzScPimpTOSW+bsEKdcaqKBB67PHkPvDu1JBx1QVu0x4cyiv9x3/ykDlTkYdSnwMrVgMVtL5Gou7kYdjpY4sMxk4JfRDuHgC+h++DCnj9A5Ni1e0v/uMkwzgNOMf+9Qr9iFyv6e615SynedmqPbQlPEJWeKhtA9+ryd7AkoffWKBgv9YsN+IYZQe1wmvqR4ykpO9isesj9NRrHczBol8LPz0II7hUG5p/giK6BVHaiK5zKu04JRKxS7xaAcjby89qt757xIVwldEQIDAQAB"
+}

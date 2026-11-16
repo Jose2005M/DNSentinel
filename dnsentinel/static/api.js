@@ -1,7 +1,7 @@
 // El token CSRF se mantiene en memoria; la sesión vive en una cookie HttpOnly.
 let csrfToken = '';
 async function api(path, options = {}) {
-  const headers = {'Content-Type': 'application/json', ...options.headers};
+  const headers = {...(options.body instanceof FormData ? {} : {'Content-Type': 'application/json'}), ...options.headers};
   if (options.method && options.method !== 'GET') headers['X-CSRF-Token'] = csrfToken;
   let response;
   try {
